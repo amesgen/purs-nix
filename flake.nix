@@ -19,12 +19,16 @@
   outputs = { get-flake, parsec, utils, ... }@inputs:
     with builtins;
     { __functor = _: { defaults ? {}, overlays ? [], system }:
+        let
+          pkgs = inputs.nixpkgs.legacyPackages.${system};
+          purs-nix = inputs.self;
+          ps-tools = inputs.ps-tools.legacyPackages.${system};
+        in
         import ./purs-nix.nix
           { docs-search = (get-flake inputs.docs-search).packages.${system}.default;
-            inherit defaults overlays;
+            inherit defaults overlays pkgs ps-tools;
             inherit (parsec.lib) parsec;
-            pkgs = inputs.nixpkgs.legacyPackages.${system};
-            ps-tools = inputs.ps-tools.legacyPackages.${system};
+            ps-exact-deps = import ./exact-deps { inherit purs-nix ps-tools pkgs system; };
           };
 
       templates =
@@ -61,6 +65,12 @@
               p = pkgs;
               u = import ./utils.nix p;
 
+              ps-exact-deps =
+                import ./exact-deps
+                  { inherit pkgs system;
+                    purs-nix = inputs.self;
+                    ps-tools = inputs.ps-tools.legacyPackages.${system};
+                  };
               inherit (import ./build-pkgs.nix { inherit pkgs; utils = u; })
                 ps-pkgs;
             in
@@ -86,6 +96,8 @@
                       ${statix}/bin/statix check ${./.}
                       touch $out
                       '';
+
+                  exact-deps = ps-exact-deps.exact-deps.build;
                 }
                 // (if system == "x86_64-linux" then
                       (get-flake ./test).checks.${system}
@@ -101,11 +113,14 @@
                       {}
                    );
 
-              devShells.default =
-                make-shell
-                  { packages = [ deadnix statix ];
-                    aliases.lint = ''deadnix **/*.nix; statix check'';
-                  };
+              devShells =
+                { default =
+                    make-shell
+                      { packages = [ deadnix statix ];
+                        aliases.lint = ''deadnix **/*.nix; statix check'';
+                      };
+                  exact-deps = ps-exact-deps.shell;
+                };
             }
          );
 }

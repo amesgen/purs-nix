@@ -1,5 +1,5 @@
 with builtins;
-{ defaults, docs-search, overlays, parsec, pkgs, ps-tools }:
+{ defaults, docs-search, overlays, parsec, pkgs, ps-tools, ps-exact-deps }:
   let
     l = p.lib; p = pkgs; u = import ./utils.nix p;
     parser = import ./parser.nix { inherit l parsec; };
@@ -731,6 +731,32 @@ with builtins;
                 ${run args}
                 touch $out
                 '';
+          };
+
+        exact-deps =
+          let
+            exact-deps = srcs: declared-deps: dep-closure:
+              let
+                projectArgs =
+                  concatMap (src: ["--project" "--dir=${src}"]) srcs;
+                depsArgs =
+                  concatMap
+                    (d: ["--dep=${u.dep-name d}" "--dir=${d.src}/${d.purs-nix-info.src}"])
+                    all-dependencies;
+                declaredArgs =
+                  map (d: "--declared=${u.dep-name d}") (args.dependencies or []);
+              in
+              p.runCommand "ps-exact-deps"
+                { nativeBuildInputs = [ ps-exact-deps.app ];
+                }
+                ''
+                  exact-deps ${l.escapeShellArgs (projectArgs ++ depsArgs ++ declaredArgs)}
+                  touch $out
+                '';
+          in
+          { build = exact-deps srcs (args.dependencies or []) dependencies; }
+          // l.optionalAttrs (args?test-dependencies) {
+            test = exact-deps [ test-src ] args.test-dependencies all-dependencies;
           };
       };
   }
